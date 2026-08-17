@@ -259,17 +259,31 @@ export function FeaturedWork() {
     let dragVelocity = 0;
 
     const onDown = (e: PointerEvent) => {
-      // Only activate drag on desktop (not touch/mobile)
-      if (e.pointerType === "touch") return;
       isDragging = true;
       lastX = e.clientX;
+      startY = e.clientY;
+      isHorizontalDrag = false;
       dragVelocity = 0;
-      (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      if (e.pointerType !== "touch") {
+        (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      }
       if (sceneDataRef.current) { sceneDataRef.current.hadInput = true; sceneDataRef.current.scrollVelocity = 0; }
     };
+    let startY = 0;
+    let isHorizontalDrag = false;
+
     const onMove = (e: PointerEvent) => {
       if (!isDragging || !sceneDataRef.current) return;
       const dx = e.clientX - lastX;
+      const dy = Math.abs(e.clientY - startY);
+      
+      // Determine drag direction on first move
+      if (!isHorizontalDrag && Math.abs(dx) > 5) {
+        isHorizontalDrag = Math.abs(dx) > dy;
+      }
+      
+      if (!isHorizontalDrag) return; // Let vertical scroll pass through
+      
       const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
       sceneDataRef.current.globalOffset += dx * pixelToWorld;
       dragVelocity = dx * pixelToWorld * 0.3;
