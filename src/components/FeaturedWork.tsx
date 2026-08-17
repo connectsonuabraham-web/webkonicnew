@@ -261,7 +261,7 @@ export function FeaturedWork() {
     let lastX = 0;
     let lastTime = 0;
     let velocityX = 0;
-    let isHorizontalSwipe = null;
+    let isHorizontalSwipe: boolean | null = null;
 
     // Touch handlers for mobile
     const handleTouchStart = (e: TouchEvent) => {
