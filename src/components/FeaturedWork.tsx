@@ -101,7 +101,7 @@ export function FeaturedWork() {
     const worldHeight = 2 * Math.tan(vFov / 2) * camera.position.z;
     const worldWidth = (width / height) * worldHeight;
 
-    const slideW = worldWidth * (width < 768 ? 0.65 : 0.5);
+    const slideW = worldWidth * (width < 768 ? 0.65 : 0.38);
     const slideH = slideW / CONFIG.SLIDE_ASPECT_RATIO;
     const gap = slideW * CONFIG.SLIDE_GAP_RATIO;
     const stride = slideW + gap;
@@ -113,8 +113,8 @@ export function FeaturedWork() {
     const slides: { mesh: THREE.Mesh; material: THREE.ShaderMaterial; baseOffsetX: number; dataIndex: number }[] = [];
     const centerIdx = Math.floor(visibleSlides / 2);
 
-    // Push the card down so text has space above
-    const planeYOffset = -worldHeight * 0.18;
+    // Card centered between header text and bottom buttons
+    const planeYOffset = -worldHeight * 0.14;
 
     for (let i = 0; i < visibleSlides; i++) {
       const dataIndex = i % projects.length;
@@ -259,6 +259,8 @@ export function FeaturedWork() {
     let dragVelocity = 0;
 
     const onDown = (e: PointerEvent) => {
+      // Only activate drag on desktop (not touch/mobile)
+      if (e.pointerType === "touch") return;
       isDragging = true;
       lastX = e.clientX;
       dragVelocity = 0;
@@ -305,7 +307,7 @@ export function FeaturedWork() {
       </div>
 
       {/* Three.js canvas */}
-      <div ref={containerRef} className="w-full h-full touch-none" />
+      <div ref={containerRef} className="w-full h-full md:touch-none" />
 
       {/* Project title left */}
       <div className="absolute bottom-16 md:bottom-8 left-6 md:left-8 z-10 pointer-events-none">
@@ -321,7 +323,7 @@ export function FeaturedWork() {
       </div>
 
       {/* View more work */}
-      <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 z-10">
+      <div className="absolute bottom-2 md:bottom-4 left-1/2 -translate-x-1/2 z-10">
         <Link href="/work" className="pointer-events-auto">
           <button className="btn-outline text-xs">View more work</button>
         </Link>

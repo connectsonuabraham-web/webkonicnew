@@ -15,7 +15,8 @@ export function WorkBgGradient() {
 
     // Particles
     const particles: { x: number; y: number; vx: number; vy: number; size: number; opacity: number; speed: number }[] = [];
-    const particleCount = window.innerWidth < 768 ? 40 : 80;
+    // Fewer particles for performance
+    const particleCount = window.innerWidth < 768 ? 20 : 40;
 
     for (let i = 0; i < particleCount; i++) {
       particles.push({
@@ -43,7 +44,10 @@ export function WorkBgGradient() {
     window.addEventListener("mousemove", handleMouseMove);
 
     let animId: number;
-    function draw() {
+    let lastFrame = 0;
+    function draw(timestamp: number) {
+      if (timestamp - lastFrame < 33) return; // 30fps cap
+      lastFrame = timestamp;
       if (!ctx || !canvas) return;
       const m = mouseRef.current;
 
@@ -103,7 +107,7 @@ export function WorkBgGradient() {
 
       animId = requestAnimationFrame(draw);
     }
-    draw();
+    requestAnimationFrame(draw);
 
     return () => {
       window.removeEventListener("resize", resize);
