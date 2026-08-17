@@ -250,139 +250,154 @@ export function FeaturedWork() {
     return () => container.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // Drag handler with improved touch support
+  // Touch and drag handler - Mobile optimized
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    
     let isDragging = false;
-    let lastX = 0;
     let startX = 0;
     let startY = 0;
-    let isHorizontalDrag = false;
-    let dragVelocity = 0;
-    let velocityTracker: { time: number; x: number }[] = [];
-    let lastMoveTime = 0;
+    let lastX = 0;
+    let lastTime = 0;
+    let velocityX = 0;
+    let isHorizontalSwipe = null;
 
-    const onDown = (e: PointerEvent) => {
-      e.preventDefault();
+    // Touch handlers for mobile
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      
+      const touch = e.touches[0];
       isDragging = true;
-      lastX = e.clientX;
-      startX = e.clientX;
-      startY = e.clientY;
-      isHorizontalDrag = false;
-      dragVelocity = 0;
-      velocityTracker = [];
-      lastMoveTime = performance.now();
+      startX = touch.clientX;
+      startY = touch.clientY;
+      lastX = touch.clientX;
+      lastTime = performance.now();
+      velocityX = 0;
+      isHorizontalSwipe = null;
       
-      // Improved pointer capture for all device types
-      try {
-        (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
-      } catch (err) {
-        // Fallback for older browsers
-      }
-      
-      if (sceneDataRef.current) { 
-        sceneDataRef.current.hadInput = true; 
-        sceneDataRef.current.scrollVelocity = 0; 
+      if (sceneDataRef.current) {
+        sceneDataRef.current.hadInput = true;
+        sceneDataRef.current.scrollVelocity = 0;
       }
     };
 
-    const onMove = (e: PointerEvent) => {
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging || e.touches.length !== 1 || !sceneDataRef.current) return;
+      
+      const touch = e.touches[0];
+      const currentTime = performance.now();
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+      const dx = touch.clientX - lastX;
+      const dt = currentTime - lastTime;
+      
+      // Determine if this is a horizontal swipe
+      if (isHorizontalSwipe === null && (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10)) {
+        isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY);
+      }
+      
+      // If it's a horizontal swipe, handle it
+      if (isHorizontalSwipe) {
+        e.preventDefault(); // Prevent vertical scroll
+        e.stopPropagation();
+        
+        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
+        sceneDataRef.current.globalOffset += dx * pixelToWorld * 1.5; // Increased sensitivity for mobile
+        
+        // Calculate velocity
+        if (dt > 0) {
+          velocityX = dx / dt;
+        }
+        
+        sceneDataRef.current.hadInput = true;
+      }
+      
+      lastX = touch.clientX;
+      lastTime = currentTime;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
       if (!isDragging || !sceneDataRef.current) return;
+      
+      isDragging = false;
+      
+      if (isHorizontalSwipe && Math.abs(velocityX) > 0.1) {
+        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
+        sceneDataRef.current.scrollVelocity = velocityX * pixelToWorld * 8; // Strong momentum for mobile
+        sceneDataRef.current.hadInput = true;
+      }
+      
+      isHorizontalSwipe = null;
+    };
+
+    // Mouse/pointer handlers for desktop
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return; // Let touch events handle mobile
+      
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      lastX = e.clientX;
+      lastTime = performance.now();
+      velocityX = 0;
+      
+      (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      
+      if (sceneDataRef.current) {
+        sceneDataRef.current.hadInput = true;
+        sceneDataRef.current.scrollVelocity = 0;
+      }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isDragging || e.pointerType === "touch" || !sceneDataRef.current) return;
       
       const currentTime = performance.now();
       const dx = e.clientX - lastX;
-      const totalDx = Math.abs(e.clientX - startX);
-      const totalDy = Math.abs(e.clientY - startY);
-
-      // More sensitive threshold for touch devices
-      const threshold = e.pointerType === "touch" ? 5 : 8;
+      const dt = currentTime - lastTime;
       
-      if (!isHorizontalDrag && (totalDx > threshold || totalDy > threshold)) {
-        isHorizontalDrag = totalDx >= totalDy;
-      }
-      
-      // Allow slight vertical movement for touch devices
-      if (!isHorizontalDrag && totalDy > threshold * 2) return;
-
-      // Prevent page scroll when dragging horizontally
-      if (isHorizontalDrag && e.pointerType === "touch") {
-        e.preventDefault();
-      }
-
       const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-      const worldDelta = dx * pixelToWorld;
+      sceneDataRef.current.globalOffset += dx * pixelToWorld;
       
-      // Enhanced sensitivity for mobile
-      const mobileSensitivity = e.pointerType === "touch" ? 1.2 : 1.0;
-      sceneDataRef.current.globalOffset += worldDelta * mobileSensitivity;
-      
-      // Track velocity for better momentum
-      velocityTracker.push({ time: currentTime, x: e.clientX });
-      
-      // Keep only recent velocity data (last 100ms)
-      velocityTracker = velocityTracker.filter(point => currentTime - point.time < 100);
+      if (dt > 0) {
+        velocityX = dx / dt;
+      }
       
       sceneDataRef.current.hadInput = true;
       lastX = e.clientX;
-      lastMoveTime = currentTime;
+      lastTime = currentTime;
     };
 
-    const onUp = (e: PointerEvent) => {
-      if (!isDragging || !sceneDataRef.current) return;
+    const handlePointerUp = (e: PointerEvent) => {
+      if (!isDragging || e.pointerType === "touch" || !sceneDataRef.current) return;
+      
       isDragging = false;
       
-      // Calculate velocity from recent movement history
-      const currentTime = performance.now();
-      const recentPoints = velocityTracker.filter(point => currentTime - point.time < 50);
-      
-      if (recentPoints.length >= 2) {
-        const firstPoint = recentPoints[0];
-        const lastPoint = recentPoints[recentPoints.length - 1];
-        const timeDiff = (lastPoint.time - firstPoint.time) / 1000; // Convert to seconds
-        const pixelDiff = lastPoint.x - firstPoint.x;
-        
-        if (timeDiff > 0) {
-          const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-          const velocityMultiplier = e.pointerType === "touch" ? 2.5 : 1.5;
-          dragVelocity = (pixelDiff / timeDiff) * pixelToWorld * velocityMultiplier;
-        }
+      if (Math.abs(velocityX) > 0.1) {
+        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
+        sceneDataRef.current.scrollVelocity = velocityX * pixelToWorld * 3;
+        sceneDataRef.current.hadInput = true;
       }
-      
-      sceneDataRef.current.scrollVelocity = dragVelocity;
-      sceneDataRef.current.hadInput = true;
-      velocityTracker = [];
     };
 
-    const onCancel = () => {
-      isDragging = false;
-      velocityTracker = [];
-    };
+    // Add touch events (priority for mobile)
+    container.addEventListener("touchstart", handleTouchStart, { passive: false });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd, { passive: true });
 
-    // Use both pointer and touch events for maximum compatibility
-    container.addEventListener("pointerdown", onDown, { passive: false });
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onCancel);
-    
-    // Touch event fallbacks
-    container.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const pointerEvent = new PointerEvent("pointerdown", {
-          clientX: touch.clientX,
-          clientY: touch.clientY,
-          pointerType: "touch"
-        } as any);
-        onDown(pointerEvent);
-      }
-    }, { passive: false });
+    // Add pointer events for desktop
+    container.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    document.addEventListener("pointermove", handlePointerMove, { passive: true });
+    document.addEventListener("pointerup", handlePointerUp, { passive: true });
 
     return () => {
-      container.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
+      container.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
     };
   }, []);
 
@@ -400,7 +415,17 @@ export function FeaturedWork() {
       </div>
 
       {/* Three.js canvas */}
-      <div ref={containerRef} className="w-full h-full touch-pan-y md:touch-none" style={{ touchAction: 'pan-y' }} />
+      <div 
+        ref={containerRef} 
+        className="w-full h-full select-none"
+        style={{ 
+          touchAction: 'pan-y',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none',
+          overscrollBehavior: 'contain'
+        }} 
+      />
 
       {/* Project title left */}
       <div className="absolute bottom-16 md:bottom-8 left-6 md:left-8 z-10 pointer-events-none">
