@@ -17,13 +17,13 @@ const CONFIG = {
   BARREL_EDGE_LIFT: 0.25,
   BARREL_ATTACK_LERP: 0.06,
   BARREL_RELEASE_LERP: 0.035,
-  BARREL_VELOCITY_THRESHOLD: 0.012,
+  BARREL_VELOCITY_THRESHOLD: 0.008, // Lower threshold for mobile sensitivity
   BARREL_SPEED_FACTOR: 0.18,
   BARREL_IMPULSE_FACTOR: 1.8,
   BARREL_MAX_STRENGTH: 1,
   SCROLL_SPEED: 0.00112,
-  SCROLL_DAMPING: 0.93,
-  SNAP_SMOOTH_TIME: 0.9,
+  SCROLL_DAMPING: 0.88, // Slightly less damping for more responsive feel
+  SNAP_SMOOTH_TIME: 0.7, // Faster snapping for better mobile UX
   SNAP_SETTLE_OFFSET: 0.0005,
   SNAP_SETTLE_VELOCITY: 0.001,
 };
@@ -250,60 +250,139 @@ export function FeaturedWork() {
     return () => container.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // Drag handler
+  // Drag handler with improved touch support
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let isDragging = false;
     let lastX = 0;
+    let startX = 0;
+    let startY = 0;
+    let isHorizontalDrag = false;
     let dragVelocity = 0;
+    let velocityTracker: { time: number; x: number }[] = [];
+    let lastMoveTime = 0;
 
     const onDown = (e: PointerEvent) => {
+      e.preventDefault();
       isDragging = true;
       lastX = e.clientX;
+      startX = e.clientX;
       startY = e.clientY;
       isHorizontalDrag = false;
       dragVelocity = 0;
-      if (e.pointerType !== "touch") {
+      velocityTracker = [];
+      lastMoveTime = performance.now();
+      
+      // Improved pointer capture for all device types
+      try {
         (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      } catch (err) {
+        // Fallback for older browsers
       }
-      if (sceneDataRef.current) { sceneDataRef.current.hadInput = true; sceneDataRef.current.scrollVelocity = 0; }
+      
+      if (sceneDataRef.current) { 
+        sceneDataRef.current.hadInput = true; 
+        sceneDataRef.current.scrollVelocity = 0; 
+      }
     };
-    let startY = 0;
-    let isHorizontalDrag = false;
 
     const onMove = (e: PointerEvent) => {
       if (!isDragging || !sceneDataRef.current) return;
-      const dx = e.clientX - lastX;
-      const dy = Math.abs(e.clientY - startY);
       
-      // Determine drag direction on first move
-      if (!isHorizontalDrag && Math.abs(dx) > 5) {
-        isHorizontalDrag = Math.abs(dx) > dy;
+      const currentTime = performance.now();
+      const dx = e.clientX - lastX;
+      const totalDx = Math.abs(e.clientX - startX);
+      const totalDy = Math.abs(e.clientY - startY);
+
+      // More sensitive threshold for touch devices
+      const threshold = e.pointerType === "touch" ? 5 : 8;
+      
+      if (!isHorizontalDrag && (totalDx > threshold || totalDy > threshold)) {
+        isHorizontalDrag = totalDx >= totalDy;
       }
       
-      if (!isHorizontalDrag) return; // Let vertical scroll pass through
-      
+      // Allow slight vertical movement for touch devices
+      if (!isHorizontalDrag && totalDy > threshold * 2) return;
+
+      // Prevent page scroll when dragging horizontally
+      if (isHorizontalDrag && e.pointerType === "touch") {
+        e.preventDefault();
+      }
+
       const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-      sceneDataRef.current.globalOffset += dx * pixelToWorld;
-      dragVelocity = dx * pixelToWorld * 0.3;
+      const worldDelta = dx * pixelToWorld;
+      
+      // Enhanced sensitivity for mobile
+      const mobileSensitivity = e.pointerType === "touch" ? 1.2 : 1.0;
+      sceneDataRef.current.globalOffset += worldDelta * mobileSensitivity;
+      
+      // Track velocity for better momentum
+      velocityTracker.push({ time: currentTime, x: e.clientX });
+      
+      // Keep only recent velocity data (last 100ms)
+      velocityTracker = velocityTracker.filter(point => currentTime - point.time < 100);
+      
       sceneDataRef.current.hadInput = true;
       lastX = e.clientX;
-    };
-    const onUp = () => {
-      if (!isDragging || !sceneDataRef.current) return;
-      isDragging = false;
-      sceneDataRef.current.scrollVelocity = dragVelocity;
-      sceneDataRef.current.hadInput = true;
+      lastMoveTime = currentTime;
     };
 
-    container.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointermove", onMove);
+    const onUp = (e: PointerEvent) => {
+      if (!isDragging || !sceneDataRef.current) return;
+      isDragging = false;
+      
+      // Calculate velocity from recent movement history
+      const currentTime = performance.now();
+      const recentPoints = velocityTracker.filter(point => currentTime - point.time < 50);
+      
+      if (recentPoints.length >= 2) {
+        const firstPoint = recentPoints[0];
+        const lastPoint = recentPoints[recentPoints.length - 1];
+        const timeDiff = (lastPoint.time - firstPoint.time) / 1000; // Convert to seconds
+        const pixelDiff = lastPoint.x - firstPoint.x;
+        
+        if (timeDiff > 0) {
+          const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
+          const velocityMultiplier = e.pointerType === "touch" ? 2.5 : 1.5;
+          dragVelocity = (pixelDiff / timeDiff) * pixelToWorld * velocityMultiplier;
+        }
+      }
+      
+      sceneDataRef.current.scrollVelocity = dragVelocity;
+      sceneDataRef.current.hadInput = true;
+      velocityTracker = [];
+    };
+
+    const onCancel = () => {
+      isDragging = false;
+      velocityTracker = [];
+    };
+
+    // Use both pointer and touch events for maximum compatibility
+    container.addEventListener("pointerdown", onDown, { passive: false });
+    window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    
+    // Touch event fallbacks
+    container.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const pointerEvent = new PointerEvent("pointerdown", {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          pointerType: "touch"
+        } as any);
+        onDown(pointerEvent);
+      }
+    }, { passive: false });
+
     return () => {
       container.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
   }, []);
 
@@ -321,7 +400,7 @@ export function FeaturedWork() {
       </div>
 
       {/* Three.js canvas */}
-      <div ref={containerRef} className="w-full h-full md:touch-none" />
+      <div ref={containerRef} className="w-full h-full touch-pan-y md:touch-none" style={{ touchAction: 'pan-y' }} />
 
       {/* Project title left */}
       <div className="absolute bottom-16 md:bottom-8 left-6 md:left-8 z-10 pointer-events-none">
