@@ -4,24 +4,11 @@ import { useEffect, useRef, useState } from "react";
 
 export function HeroSection() {
   const sectionRef = useRef<HTMLElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [revealed, setRevealed] = useState(false);
-  const [videoLoaded, setVideoLoaded] = useState(false);
 
   useEffect(() => {
-    // Preload video and reveal section faster
-    const video = videoRef.current;
-    if (video) {
-      video.addEventListener('loadeddata', () => {
-        setVideoLoaded(true);
-      });
-      video.addEventListener('canplay', () => {
-        setVideoLoaded(true);
-      });
-    }
-
-    // Faster reveal - don't wait for loader
-    const timer = setTimeout(() => setRevealed(true), 800);
+    // Wait for loader to finish then reveal
+    const timer = setTimeout(() => setRevealed(true), 1900);
     return () => clearTimeout(timer);
   }, []);
 
@@ -33,22 +20,14 @@ export function HeroSection() {
       {/* Background Video */}
       <div className="absolute inset-0 z-0">
         <video
-          ref={videoRef}
           autoPlay
           muted
           loop
           playsInline
-          preload="metadata"
-          className={`w-full h-full object-cover transition-opacity duration-500 ${
-            videoLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
+          className="w-full h-full object-cover"
         >
           <source src="/videos/webkonic.mp4" type="video/mp4" />
         </video>
-        {/* Fallback background while video loads */}
-        <div className={`absolute inset-0 bg-[rgb(13,7,24)] transition-opacity duration-500 ${
-          videoLoaded ? 'opacity-0' : 'opacity-100'
-        }`} />
         <div className="absolute inset-0 bg-gradient-to-t from-[rgb(13,7,24)] via-[rgb(13,7,24)]/50 to-transparent" />
       </div>
 

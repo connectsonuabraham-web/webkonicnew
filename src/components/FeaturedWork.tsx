@@ -8,6 +8,9 @@ const projects = [
   { title: "Mavyn", url: "https://mavyn.ae/", image: "/covers/1.png" },
   { title: "Xarr Studio", url: "https://www.xarrstudio.com/", image: "/covers/2.png" },
   { title: "Latin Dance", url: "https://latindance.net/", image: "/covers/3.png" },
+  { title: "Let's Progress", url: "https://lets-progress.com/en/", image: "/covers/4.png" },
+  { title: "Raysaar", url: "https://raysaar.com/", image: "/covers/5.png" },
+  { title: "Montreal Bachata Festival", url: "https://montrealbachatafestival.com/", image: "/covers/6.png" },
 ];
 
 const CONFIG = {
@@ -17,13 +20,13 @@ const CONFIG = {
   BARREL_EDGE_LIFT: 0.25,
   BARREL_ATTACK_LERP: 0.06,
   BARREL_RELEASE_LERP: 0.035,
-  BARREL_VELOCITY_THRESHOLD: 0.008, // Lower threshold for mobile sensitivity
+  BARREL_VELOCITY_THRESHOLD: 0.012,
   BARREL_SPEED_FACTOR: 0.18,
   BARREL_IMPULSE_FACTOR: 1.8,
   BARREL_MAX_STRENGTH: 1,
   SCROLL_SPEED: 0.00112,
-  SCROLL_DAMPING: 0.88, // Slightly less damping for more responsive feel
-  SNAP_SMOOTH_TIME: 0.7, // Faster snapping for better mobile UX
+  SCROLL_DAMPING: 0.93,
+  SNAP_SMOOTH_TIME: 0.9,
   SNAP_SETTLE_OFFSET: 0.0005,
   SNAP_SETTLE_VELOCITY: 0.001,
 };
@@ -109,7 +112,7 @@ export function FeaturedWork() {
     const loader = new THREE.TextureLoader();
     const textures = projects.map((p) => loader.load(p.image));
     const geometry = new THREE.PlaneGeometry(1, 1, 32, 10);
-    const visibleSlides = 3;
+    const visibleSlides = width < 768 ? 5 : 7; // More slides for better infinite effect
     const slides: { mesh: THREE.Mesh; material: THREE.ShaderMaterial; baseOffsetX: number; dataIndex: number }[] = [];
     const centerIdx = Math.floor(visibleSlides / 2);
 
@@ -187,26 +190,33 @@ export function FeaturedWork() {
       const barrelLerp = targetBarrel > data.barrelStrength ? CONFIG.BARREL_ATTACK_LERP : CONFIG.BARREL_RELEASE_LERP;
       data.barrelStrength += (targetBarrel - data.barrelStrength) * barrelLerp;
 
+      // Enhanced infinite looping - seamless wrapping
       const totalWidth = projects.length * data.stride;
       const halfTotal = totalWidth / 2;
 
       for (const slide of data.slides) {
         let worldX = slide.baseOffsetX + data.globalOffset;
+        
+        // Infinite wrapping - projects loop seamlessly
         while (worldX < -halfTotal) worldX += totalWidth;
         while (worldX > halfTotal) worldX -= totalWidth;
+        
         slide.mesh.position.x = worldX;
         slide.material.uniforms.uBarrelStrength.value = data.barrelStrength;
         slide.material.uniforms.uMeshX.value = worldX;
 
+        // Dynamic texture assignment for infinite loop
         const slotIndex = Math.round(worldX / data.stride);
         const centeredProject = Math.round(-data.globalOffset / data.stride);
         const projectIdx = ((centeredProject + slotIndex) % projects.length + projects.length) % projects.length;
+        
         if (projectIdx !== slide.dataIndex) {
           slide.dataIndex = projectIdx;
           slide.material.uniforms.uImageTexture.value = textures[projectIdx];
         }
       }
 
+      // Update current index with proper wrapping
       const centeredSlideIndex = Math.round(-data.globalOffset / data.stride);
       setCurrentIndex(((centeredSlideIndex % projects.length) + projects.length) % projects.length);
 
@@ -250,155 +260,127 @@ export function FeaturedWork() {
     return () => container.removeEventListener("wheel", handleWheel);
   }, []);
 
-  // Touch and drag handler - Mobile optimized
+  // Drag handler - Enhanced for mobile with better touch handling
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     
     let isDragging = false;
-    let startX = 0;
-    let startY = 0;
     let lastX = 0;
     let lastTime = 0;
-    let velocityX = 0;
-    let isHorizontalSwipe: boolean | null = null;
+    let dragVelocity = 0;
+    let startX = 0;
+    let startY = 0;
+    let isHorizontalDrag = false;
+    let hasMoved = false;
 
-    // Touch handlers for mobile
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      
-      const touch = e.touches[0];
-      isDragging = true;
-      startX = touch.clientX;
-      startY = touch.clientY;
-      lastX = touch.clientX;
-      lastTime = performance.now();
-      velocityX = 0;
-      isHorizontalSwipe = null;
-      
-      if (sceneDataRef.current) {
-        sceneDataRef.current.hadInput = true;
-        sceneDataRef.current.scrollVelocity = 0;
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isDragging || e.touches.length !== 1 || !sceneDataRef.current) return;
-      
-      const touch = e.touches[0];
-      const currentTime = performance.now();
-      const deltaX = touch.clientX - startX;
-      const deltaY = touch.clientY - startY;
-      const dx = touch.clientX - lastX;
-      const dt = currentTime - lastTime;
-      
-      // Determine if this is a horizontal swipe
-      if (isHorizontalSwipe === null && (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10)) {
-        isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY);
-      }
-      
-      // If it's a horizontal swipe, handle it
-      if (isHorizontalSwipe) {
-        e.preventDefault(); // Prevent vertical scroll
-        e.stopPropagation();
-        
-        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-        sceneDataRef.current.globalOffset += dx * pixelToWorld * 1.5; // Increased sensitivity for mobile
-        
-        // Calculate velocity
-        if (dt > 0) {
-          velocityX = dx / dt;
-        }
-        
-        sceneDataRef.current.hadInput = true;
-      }
-      
-      lastX = touch.clientX;
-      lastTime = currentTime;
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (!isDragging || !sceneDataRef.current) return;
-      
-      isDragging = false;
-      
-      if (isHorizontalSwipe && Math.abs(velocityX) > 0.1) {
-        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-        sceneDataRef.current.scrollVelocity = velocityX * pixelToWorld * 8; // Strong momentum for mobile
-        sceneDataRef.current.hadInput = true;
-      }
-      
-      isHorizontalSwipe = null;
-    };
-
-    // Mouse/pointer handlers for desktop
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return; // Let touch events handle mobile
-      
+    const onDown = (e: PointerEvent) => {
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
       lastX = e.clientX;
       lastTime = performance.now();
-      velocityX = 0;
+      isHorizontalDrag = false;
+      dragVelocity = 0;
+      hasMoved = false;
       
-      (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      // Prevent text selection and capture pointer
+      e.preventDefault();
+      if (e.pointerType !== "touch") {
+        (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
+      }
       
-      if (sceneDataRef.current) {
-        sceneDataRef.current.hadInput = true;
-        sceneDataRef.current.scrollVelocity = 0;
+      // Stop any existing momentum
+      if (sceneDataRef.current) { 
+        sceneDataRef.current.hadInput = true; 
+        sceneDataRef.current.scrollVelocity = 0; 
       }
     };
 
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!isDragging || e.pointerType === "touch" || !sceneDataRef.current) return;
+    const onMove = (e: PointerEvent) => {
+      if (!isDragging || !sceneDataRef.current) return;
       
-      const currentTime = performance.now();
+      const now = performance.now();
+      const dt = Math.max(now - lastTime, 1);
       const dx = e.clientX - lastX;
-      const dt = currentTime - lastTime;
+      const dy = Math.abs(e.clientY - startY);
       
+      // Determine drag direction on first move with lower threshold for mobile
+      if (!hasMoved && (Math.abs(dx) > 3 || dy > 3)) {
+        hasMoved = true;
+        isHorizontalDrag = Math.abs(dx) > dy * 0.5; // More forgiving for horizontal detection
+      }
+      
+      // Only handle horizontal drags to prevent interfering with page scroll
+      if (!isHorizontalDrag) return;
+      
+      // Prevent default to stop page scrolling during horizontal drag
+      e.preventDefault();
+      
+      // Convert pixel movement to world units with enhanced sensitivity for mobile
+      const container = containerRef.current;
+      if (!container) return;
       const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
+      
+      // Apply drag with immediate response
       sceneDataRef.current.globalOffset += dx * pixelToWorld;
       
-      if (dt > 0) {
-        velocityX = dx / dt;
-      }
+      // Calculate velocity for momentum with better mobile feel
+      dragVelocity = (dx / dt) * pixelToWorld * 16;
       
       sceneDataRef.current.hadInput = true;
       lastX = e.clientX;
-      lastTime = currentTime;
+      lastTime = now;
     };
 
-    const handlePointerUp = (e: PointerEvent) => {
-      if (!isDragging || e.pointerType === "touch" || !sceneDataRef.current) return;
-      
+    const onUp = () => {
+      if (!isDragging || !sceneDataRef.current) return;
       isDragging = false;
       
-      if (Math.abs(velocityX) > 0.1) {
-        const pixelToWorld = sceneDataRef.current.viewportWidth / container.clientWidth;
-        sceneDataRef.current.scrollVelocity = velocityX * pixelToWorld * 3;
+      // Apply momentum with mobile-optimized values
+      if (hasMoved && isHorizontalDrag) {
+        sceneDataRef.current.scrollVelocity = dragVelocity * 0.6; // Increased momentum for better feel
+      }
+      
+      sceneDataRef.current.hadInput = true;
+    };
+
+    // Add touch-action CSS to prevent browser interference
+    container.style.touchAction = 'pan-y pinch-zoom';
+    
+    container.addEventListener("pointerdown", onDown, { passive: false });
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp); // Handle touch cancellation
+    
+    return () => {
+      container.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, []);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!sceneDataRef.current) return;
+      
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        sceneDataRef.current.globalOffset += sceneDataRef.current.stride;
+        sceneDataRef.current.scrollVelocity = 0.3;
+        sceneDataRef.current.hadInput = true;
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        sceneDataRef.current.globalOffset -= sceneDataRef.current.stride;
+        sceneDataRef.current.scrollVelocity = -0.3;
         sceneDataRef.current.hadInput = true;
       }
     };
 
-    // Add touch events (priority for mobile)
-    container.addEventListener("touchstart", handleTouchStart, { passive: false });
-    container.addEventListener("touchmove", handleTouchMove, { passive: false });
-    container.addEventListener("touchend", handleTouchEnd, { passive: true });
-
-    // Add pointer events for desktop
-    container.addEventListener("pointerdown", handlePointerDown, { passive: true });
-    document.addEventListener("pointermove", handlePointerMove, { passive: true });
-    document.addEventListener("pointerup", handlePointerUp, { passive: true });
-
-    return () => {
-      container.removeEventListener("touchstart", handleTouchStart);
-      container.removeEventListener("touchmove", handleTouchMove);
-      container.removeEventListener("touchend", handleTouchEnd);
-      container.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   return (
@@ -415,17 +397,7 @@ export function FeaturedWork() {
       </div>
 
       {/* Three.js canvas */}
-      <div 
-        ref={containerRef} 
-        className="w-full h-full select-none"
-        style={{ 
-          touchAction: 'pan-y',
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-          WebkitTouchCallout: 'none',
-          overscrollBehavior: 'contain'
-        }} 
-      />
+      <div ref={containerRef} className="w-full h-full" />
 
       {/* Project title left */}
       <div className="absolute bottom-16 md:bottom-8 left-6 md:left-8 z-10 pointer-events-none">
